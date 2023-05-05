@@ -1,0 +1,72 @@
+*&---------------------------------------------------------------------*
+*& INCLUDE         TOP
+*&---------------------------------------------------------------------*
+
+DATA:
+      "EXPORT
+      w_group TYPE bapi1191_tsk_c-task_list_group,
+      w_gpcnt TYPE bapi1191_tsk_c-group_counter,
+      "TABLE
+      t_tsk   TYPE TABLE OF bapi1191_tsk_c WITH HEADER LINE,
+      t_mtk   TYPE TABLE OF bapi1191_mtk_c WITH HEADER LINE,
+      t_opr   TYPE TABLE OF bapi1191_opr_c WITH HEADER LINE,
+      t_cha   TYPE TABLE OF bapi1191_cha_c WITH HEADER LINE,
+      t_ret   TYPE TABLE OF bapiret2 WITH HEADER LINE,
+
+      t_qpmk  TYPE TABLE OF qpmk WITH HEADER LINE,
+      t_qpmt  TYPE TABLE OF qpmt WITH HEADER LINE.
+
+DATA: t_t006a   TYPE STANDARD TABLE OF t006a,
+      wa_t006a  TYPE t006a.
+
+
+DATA: BEGIN OF wa_head,
+      "表頭Header
+          material           TYPE char20,      "物料
+          plant              TYPE char20,      "工廠
+          valid_from         TYPE char20,      "生效日期
+          group_counter      TYPE char20,      "群組計數
+          description	       TYPE bapi1191_tsk_c-description,              "工作細項清單說明
+          task_list_usage    TYPE char20,      "工作清單用途
+          task_list_status   TYPE char20,      "狀態
+          resp_planner_group TYPE char20,      "負責計劃員群組 / 部門
+          task_measure_unit  TYPE char20,      "任務清單的計量單位
+          ident_key          TYPE char20,      "檢驗點
+          dyn_modif_level    TYPE char20,      "加嚴減量修正參數被定義的層級
+          dyn_modif_rule     TYPE char20,      "加嚴減量修正規則
+      END OF wa_head,
+      t_head LIKE STANDARD TABLE OF wa_head.
+
+"製程作業
+DATA: BEGIN OF wa_tab3 ,
+          "作業Operations
+          material        TYPE char20,          "物料
+          plant           TYPE char20,          "工廠
+          group_counter   TYPE char20,          "群組計數
+          control_key     TYPE char20,          "控制碼
+          "檢驗特性inspection characteristics
+          mstr_char       TYPE char20,          "主要檢驗特性
+          char_descr      TYPE char40,          "檢驗特性短文
+          method          TYPE qpmethode,       "檢驗方法
+          smpl_procedure  TYPE char20,          "檢驗特性中的抽樣程序
+          target_val      TYPE char20,          "定量特性的目標值
+          lw_tol_lmt      TYPE char40,          "規格下限
+          up_tol_lmt      TYPE char40,          "規格上限
+          lw_pls_lmt      TYPE char40,          "合用性限制下限
+          up_pls_lmt      TYPE char40,          "合用性限制上限
+      END OF wa_tab3,
+      t_tab3 LIKE STANDARD TABLE OF wa_tab3.
+
+
+DATA: BEGIN OF wa_ertab OCCURS 0.
+          INCLUDE STRUCTURE wa_head.
+DATA:     message TYPE bapiret2-message,
+      END OF wa_ertab,
+      t_ertab LIKE STANDARD TABLE OF wa_ertab.
+
+*&**********************************************************************
+*& Selection Screen / Option / Parameter
+*&**********************************************************************
+PARAMETERS: p_head  TYPE rlgrap-filename OBLIGATORY,
+            p_file3 TYPE rlgrap-filename,
+            p_error TYPE rlgrap-filename OBLIGATORY.
