@@ -1,2 +1,2 @@
 # QM_QP01_BAPI_EXCEL
-匯入excel產生訂單
+Import the excel file to create inspection plan by business api.
