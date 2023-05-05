@@ -1,0 +1,225 @@
+REPORT main.
+************************************************************************
+* Description  : 檢驗計劃轉檔~製程作業概觀
+************************************************************************
+INCLUDE zbdcrecx2.
+INCLUDE zrqmot904top.
+INCLUDE zrqmot904f01.
+*&**********************************************************************
+*&INITIALIZATION
+*&**********************************************************************
+INITIALIZATION.
+*&**********************************************************************
+*&AT SELECTION SCREEN
+*&**********************************************************************
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_head.
+  PERFORM f4_filename USING p_head.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file3.
+  PERFORM f4_filename USING p_file3.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_error.
+  PERFORM f4_filename USING p_error.
+
+*&**********************************************************************
+*&START-OF-SELECTION
+*&**********************************************************************
+START-OF-SELECTION.
+  PERFORM read_data.
+  PERFORM process_data.
+*&**********************************************************************
+*&END-OF-SELECTION
+*&**********************************************************************
+END-OF-SELECTION.
+  PERFORM end_report.
+*&---------------------------------------------------------------------*
+*&      Form  READ_DATA
+*&---------------------------------------------------------------------*
+FORM read_data.
+  "檢驗特性資料
+  SELECT * INTO TABLE: t_qpmk FROM qpmk, t_qpmt FROM qpmt.
+  SORT: t_qpmk BY zaehler mkmnr version DESCENDING,
+        t_qpmt BY zaehler mkmnr version DESCENDING.
+  DELETE ADJACENT DUPLICATES FROM: t_qpmk COMPARING zaehler mkmnr, t_qpmt COMPARING zaehler mkmnr.
+
+  "上傳資料
+  PERFORM upload_head_xls TABLES t_head USING wa_head p_head.
+  READ TABLE t_head INDEX 1 INTO wa_ertab.
+  APPEND wa_ertab TO t_ertab.
+  READ TABLE t_head INDEX 2 INTO wa_ertab.
+  wa_ertab-message = '錯誤訊息'(004).
+  APPEND wa_ertab TO t_ertab.
+  DELETE t_head FROM 1 TO 2.
+
+  IF p_file3 NE space.
+    PERFORM upload_tab3_xls TABLES t_tab3 USING wa_tab3 p_file3.
+    DELETE t_tab3 FROM 1 TO 2.
+  ENDIF.
+
+  DESCRIBE TABLE t_head LINES w_total.
+
+ENDFORM.                    "read_data
+*&---------------------------------------------------------------------*
+*&      Form PROCESS_DATA
+*&---------------------------------------------------------------------*
+FORM process_data.
+  DATA: l_insp TYPE bapi1191_cha_c-inspchar,
+        t_ret2 TYPE TABLE OF bapiret2 WITH HEADER LINE.
+
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE t_t006a FROM t006a WHERE spras = sy-langu.
+
+  LOOP AT t_head INTO wa_head.
+    IF wa_head-valid_from IS INITIAL.
+      wa_head-valid_from = sy-datum.
+    ENDIF.
+    PERFORM change_unit USING wa_head-task_measure_unit.
+    MOVE-CORRESPONDING wa_head TO: t_tsk, t_opr, t_cha.
+    CLEAR t_opr-description.
+*    LOOP AT t_asin WHERE task_list_group = t_head-task_list_group AND group_counter = t_head-group_counter.
+*      MOVE-CORRESPONDING t_asin TO t_mtk.
+*      APPEND t_mtk.
+*    ENDLOOP.
+    APPEND t_tsk.
+    CLEAR: t_tsk, l_insp. "檢驗特性
+
+    "物料放入
+    t_mtk-material = wa_head-material.
+    t_mtk-plant = wa_head-plant.
+    APPEND t_mtk.
+
+    "製程作業概觀
+    LOOP AT t_tab3 INTO wa_tab3 WHERE material = wa_head-material AND group_counter = wa_head-group_counter.
+      ADD 10 TO l_insp.
+      MOVE-CORRESPONDING wa_tab3 TO: t_opr, t_cha.
+
+      IF l_insp = 10. "作業
+        t_opr-activity = t_cha-activity = 10.
+        t_opr-base_quantity = t_opr-denominator = t_opr-nominator = 1.
+        APPEND t_opr.
+      ENDIF.
+
+      t_cha-inspchar   = l_insp.
+      t_cha-pmstr_char = t_cha-pmethod = wa_head-plant.
+      t_cha-smpl_quant = 1.
+      t_cha-smpl_unit  = wa_head-task_measure_unit.
+      PERFORM mstr_ind.
+      IF t_cha-method = space.
+        CLEAR t_cha-pmethod.
+      ENDIF.
+      APPEND t_cha.
+    ENDLOOP.
+
+    CALL FUNCTION 'BAPI_INSPECTIONPLAN_CREATE'
+      IMPORTING
+        group                  = w_group
+        groupcounter           = w_gpcnt
+      TABLES
+        task                   = t_tsk
+        materialtaskallocation = t_mtk
+        operation              = t_opr
+        inspcharacteristic     = t_cha
+        return                 = t_ret.
+
+    CLEAR wa_ertab-message.
+    LOOP AT t_ret WHERE  type = 'A' AND message NE space.
+      wa_ertab-message = t_ret-message.
+      MOVE-CORRESPONDING wa_head TO wa_ertab.
+      APPEND wa_ertab TO t_ertab.
+      ADD 1 TO w_error.
+      EXIT.
+    ENDLOOP.
+    FREE: t_tsk, t_mtk, t_opr, t_cha, t_ret.
+  ENDLOOP.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait   = 'X'
+    IMPORTING
+      return = t_ret2.
+ENDFORM.                    "process_data
+*&---------------------------------------------------------------------*
+*&      Form END_REPORT
+*&---------------------------------------------------------------------*
+FORM end_report.
+  w_success = w_total - w_error.
+  WRITE:/ '成功筆數'(001),(5) w_success COLOR 2,
+          '失敗筆數'(002),(5) w_error   COLOR 3,
+          '總筆數'(003)  ,(5) w_total   COLOR 4.
+  CHECK p_error NE space.
+  READ TABLE t_ertab INTO wa_ertab INDEX 3.
+  CHECK sy-subrc = 0.
+*  PERFORM download_error TABLES t_ertab USING 'BIN' '65001' 'XLS'.
+  PERFORM download_error_xls TABLES t_ertab USING p_error.
+ENDFORM.                    "end_report
+*&---------------------------------------------------------------------*
+*&      Form  MSTR_IND
+*&---------------------------------------------------------------------*
+FORM mstr_ind.
+  READ TABLE t_qpmk BINARY SEARCH WITH KEY zaehler = t_cha-pmstr_char mkmnr = t_cha-mstr_char.
+  CHECK sy-subrc = 0.
+  READ TABLE t_qpmt BINARY SEARCH
+    WITH KEY zaehler = t_cha-pmstr_char mkmnr = t_cha-mstr_char sprache = sy-langu.
+  IF sy-subrc > 0.
+    READ TABLE t_qpmt BINARY SEARCH
+ 	    WITH KEY zaehler = t_cha-pmstr_char mkmnr = t_cha-mstr_char sprache = 'M'.
+  ENDIF.
+*  t_cha-char_descr = t_qpmt-kurztext. "檢驗特性的短文
+
+  IF t_qpmk-steuerkz(1) = space.   "定性
+    t_cha-cha_master_import_modus	  = 'C'.  "主檔檢驗特性的參考模式
+    CLEAR: t_cha-quantitative_ind,
+           t_cha-meas_value_confirm_ind,
+           t_cha-attribute_required_ind,
+           t_cha-up_tol_lmt_ind,
+           t_cha-lw_tol_lmt_ind,
+           t_cha-target_val_check_ind,
+           t_cha-scope_ind,
+           t_cha-long_term_insp_ind,
+           t_cha-result_recording_type,
+           t_cha-docu_requ,
+           t_cha-confirmation_category,
+           t_cha-add_sample_quantity,
+           t_cha-destructive_insp_ind,
+           t_cha-formula_ind,
+           t_cha-sampling_procedure_ind,
+           t_cha-qscore_and_share_relevant,
+           t_cha-defect_no_confirmation,
+           t_cha-insp_tool_ind,
+           t_cha-auto_defct_recording,
+           t_cha-change_documents_req,
+           t_cha-spc_ind,
+           t_cha-print_ind.
+  ELSEIF t_qpmk-steuerkz(1) = 'X'. "定量
+    t_cha-cha_master_import_modus   = 'N'.  "主檔檢驗特性的參考模式
+    t_cha-quantitative_ind          = t_qpmk-steuerkz+0(1). "01.定量特性
+    t_cha-meas_value_confirm_ind    = t_qpmk-steuerkz+1(1). "02.必須記錄測量值
+    t_cha-attribute_required_ind    = t_qpmk-steuerkz+2(1). "03.需要特性屬性的參考
+    t_cha-up_tol_lmt_ind            = t_qpmk-steuerkz+3(1). "04.規格上限
+    t_cha-lw_tol_lmt_ind            = t_qpmk-steuerkz+4(1). "05.規格下限
+    t_cha-target_val_check_ind      = t_qpmk-steuerkz+5(1). "06.檢查目標值
+    t_cha-scope_ind                 = t_qpmk-steuerkz+6(1). "07.檢驗範圍
+    t_cha-long_term_insp_ind        = t_qpmk-steuerkz+7(1). "08.長期檢驗
+    t_cha-result_recording_type     = t_qpmk-steuerkz+8(1). "09.記錄類型
+    t_cha-docu_requ                 = t_qpmk-steuerkz+9(1). "10.檢驗結果需要的紀錄文件
+    t_cha-confirmation_category     = t_qpmk-steuerkz+10(1). "11.特性種類
+    t_cha-add_sample_quantity       = t_qpmk-steuerkz+12(1). "13.添加樣本數量
+    t_cha-destructive_insp_ind      = t_qpmk-steuerkz+13(1). "14.毀壞性的檢驗
+    t_cha-formula_ind               = t_qpmk-steuerkz+14(1). "15.可計算的特性
+    t_cha-sampling_procedure_ind    = t_qpmk-steuerkz+15(1). "16.需要抽樣程序
+    t_cha-qscore_and_share_relevant = t_qpmk-steuerkz+16(1). "17.與品質評分和報廢分攤有關的特性
+    t_cha-defect_no_confirmation    = t_qpmk-steuerkz+18(1). "19.記錄缺點數
+    t_cha-insp_tool_ind             = t_qpmk-steuerkz+21(1). "22.請求指派測試設備
+    t_cha-auto_defct_recording      = t_qpmk-steuerkz+22(1). "23.缺點記錄自動呼叫
+    t_cha-change_documents_req      = t_qpmk-steuerkz+23(1). "24.在結果記錄中建立更改文件
+    t_cha-spc_ind                   = t_qpmk-steuerkz+24(1). "25.SPC 特性
+    t_cha-print_ind                 = t_qpmk-steuerkz+25(1). "26.列印
+  ENDIF.
+ENDFORM.                    " MSTR_IND
+*&---------------------------------------------------------------------*
+*& Form CHANGE_UNIT
+*&---------------------------------------------------------------------*
+FORM change_unit  USING    l_unit.
+    READ TABLE t_t006a INTO wa_t006a WITH KEY mseh3 = l_unit.
+    IF sy-subrc = 0.
+        l_unit = wa_t006a-msehi.
+    ENDIF.
+ENDFORM.
