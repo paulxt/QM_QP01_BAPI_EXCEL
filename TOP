@@ -19,7 +19,6 @@ DATA:
 DATA: t_t006a   TYPE STANDARD TABLE OF t006a,
       wa_t006a  TYPE t006a.
 
-
 DATA: BEGIN OF wa_head,
       "表頭Header
           material           TYPE char20,      "物料
@@ -37,8 +36,16 @@ DATA: BEGIN OF wa_head,
       END OF wa_head,
       t_head LIKE STANDARD TABLE OF wa_head.
 
-"製程作業
-DATA: BEGIN OF wa_tab3 ,
+*DATA: BEGIN OF t_asin OCCURS 0,
+*      "物料material assignment
+*          task_list_group    TYPE char20,      "工作細項清單群組代碼
+*          group_counter      TYPE char20,      "群組計數
+*          material           TYPE char20,      "物料號碼
+*          plant              TYPE char20,      "工廠
+*          vendor             TYPE char10,      "供應商
+*      END OF t_asin.
+
+DATA: BEGIN OF wa_tab2,
           "作業Operations
           material        TYPE char20,          "物料
           plant           TYPE char20,          "工廠
@@ -54,19 +61,25 @@ DATA: BEGIN OF wa_tab3 ,
           up_tol_lmt      TYPE char40,          "規格上限
           lw_pls_lmt      TYPE char40,          "合用性限制下限
           up_pls_lmt      TYPE char40,          "合用性限制上限
-      END OF wa_tab3,
-      t_tab3 LIKE STANDARD TABLE OF wa_tab3.
+          lw_lmt_1        TYPE char40,          "第一規格下限
+          up_lmt_1        TYPE char40,          "第一規格上限
+          zz1_qpnlt1      TYPE char20,          "付款碼1
+          lw_lmt_2        TYPE char40,          "第二規格下限
+          up_lmt_2        TYPE char40,          "第二規格上限
+          zz1_qpnlt2      TYPE char20,          "付款碼2
+          zz1_qpnlttyp    TYPE char40,          "付款代號
+      END OF wa_tab2,
+      t_tab2 LIKE STANDARD TABLE OF wa_tab2.
 
-
-DATA: BEGIN OF wa_ertab OCCURS 0.
+DATA: BEGIN OF wa_ertab.
           INCLUDE STRUCTURE wa_head.
 DATA:     message TYPE bapiret2-message,
       END OF wa_ertab,
       t_ertab LIKE STANDARD TABLE OF wa_ertab.
-
 *&**********************************************************************
 *& Selection Screen / Option / Parameter
 *&**********************************************************************
 PARAMETERS: p_head  TYPE rlgrap-filename OBLIGATORY,
-            p_file3 TYPE rlgrap-filename,
+            "p_asin  TYPE rlgrap-filename,
+            p_file2 TYPE rlgrap-filename,
             p_error TYPE rlgrap-filename OBLIGATORY.
