@@ -1,10 +1,10 @@
-REPORT main.
+REPORT Report.
 ************************************************************************
-* Description  : 檢驗計劃轉檔~製程作業概觀
+* Description  : 檢驗計劃轉檔
 ************************************************************************
 INCLUDE zbdcrecx2.
-INCLUDE zrqmot904top.
-INCLUDE zrqmot904f01.
+INCLUDE zrqmot903top.
+*INCLUDE zrqmot903f01.
 *&**********************************************************************
 *&INITIALIZATION
 *&**********************************************************************
@@ -15,8 +15,8 @@ INITIALIZATION.
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_head.
   PERFORM f4_filename USING p_head.
 
-AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file3.
-  PERFORM f4_filename USING p_file3.
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file2.
+  PERFORM f4_filename USING p_file2.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_error.
   PERFORM f4_filename USING p_error.
@@ -43,7 +43,7 @@ FORM read_data.
   DELETE ADJACENT DUPLICATES FROM: t_qpmk COMPARING zaehler mkmnr, t_qpmt COMPARING zaehler mkmnr.
 
   "上傳資料
-  PERFORM upload_head_xls TABLES t_head USING wa_head p_head.
+  PERFORM gui_upload TABLES t_head USING p_head.
   READ TABLE t_head INDEX 1 INTO wa_ertab.
   APPEND wa_ertab TO t_ertab.
   READ TABLE t_head INDEX 2 INTO wa_ertab.
@@ -51,10 +51,15 @@ FORM read_data.
   APPEND wa_ertab TO t_ertab.
   DELETE t_head FROM 1 TO 2.
 
-  IF p_file3 NE space.
-    PERFORM upload_tab3_xls TABLES t_tab3 USING wa_tab3 p_file3.
-    DELETE t_tab3 FROM 1 TO 2.
+*  IF p_asin  NE space.
+*    PERFORM gui_upload TABLES t_asin USING p_asin.
+*    DELETE t_asin FROM 1 TO 2.
+*  ENDIF.
+  IF p_file2 NE space.
+    PERFORM gui_upload TABLES t_tab2 USING p_file2.
+    DELETE t_tab2 FROM 1 TO 2.
   ENDIF.
+
 
   DESCRIBE TABLE t_head LINES w_total.
 
@@ -85,23 +90,31 @@ FORM process_data.
     "物料放入
     t_mtk-material = wa_head-material.
     t_mtk-plant = wa_head-plant.
+    t_mtk-valid_from = wa_head-valid_from.
     APPEND t_mtk.
 
-    "製程作業概觀
-    LOOP AT t_tab3 INTO wa_tab3 WHERE material = wa_head-material AND group_counter = wa_head-group_counter.
+    "作業概觀
+    LOOP AT t_tab2 INTO wa_tab2 WHERE material = wa_head-material AND group_counter = wa_head-group_counter.
       ADD 10 TO l_insp.
-      MOVE-CORRESPONDING wa_tab3 TO: t_opr, t_cha.
+      MOVE-CORRESPONDING wa_tab2 TO: t_opr, t_cha.
 
       IF l_insp = 10. "作業
         t_opr-activity = t_cha-activity = 10.
         t_opr-base_quantity = t_opr-denominator = t_opr-nominator = 1.
+        t_opr-operation_measure_unit = wa_head-task_measure_unit.
+        t_opr-insp_point_complt_flow_variant = '2'.
         APPEND t_opr.
       ENDIF.
 
+
       t_cha-inspchar   = l_insp.
+      t_cha-dec_places = 2.
+      t_cha-meas_unit = '%'.
       t_cha-pmstr_char = t_cha-pmethod = wa_head-plant.
       t_cha-smpl_quant = 1.
       t_cha-smpl_unit  = wa_head-task_measure_unit.
+      t_cha-sampling_procedure_ind = 'X'.
+      t_cha-cha_master_import_modus = 'N'.
       PERFORM mstr_ind.
       IF t_cha-method = space.
         CLEAR t_cha-pmethod.
@@ -135,6 +148,17 @@ FORM process_data.
       wait   = 'X'
     IMPORTING
       return = t_ret2.
+  "更新客製欄位
+  LOOP AT t_head INTO wa_head.
+      LOOP AT t_tab2 INTO wa_tab2 WHERE material = wa_head-material AND group_counter = wa_head-group_counter.
+          UPDATE plmk SET zz1_qpnlt1 = @wa_tab2-zz1_qpnlt1,
+                          zz1_qpnlt2 = @wa_tab2-zz1_qpnlt2,
+                          zz1_qpnlttyp = @wa_tab2-zz1_qpnlttyp
+          WHERE plnty = 'Q' AND plnnr = @w_group AND verwmerkm = @wa_tab2-mstr_char.
+      ENDLOOP.
+  ENDLOOP.
+  COMMIT WORK AND WAIT.
+
 ENDFORM.                    "process_data
 *&---------------------------------------------------------------------*
 *&      Form END_REPORT
@@ -147,8 +171,7 @@ FORM end_report.
   CHECK p_error NE space.
   READ TABLE t_ertab INTO wa_ertab INDEX 3.
   CHECK sy-subrc = 0.
-*  PERFORM download_error TABLES t_ertab USING 'BIN' '65001' 'XLS'.
-  PERFORM download_error_xls TABLES t_ertab USING p_error.
+  PERFORM gui_download TABLES t_ertab USING p_error.
 ENDFORM.                    "end_report
 *&---------------------------------------------------------------------*
 *&      Form  MSTR_IND
